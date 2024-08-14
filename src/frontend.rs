@@ -113,7 +113,7 @@ trait TrayIconTrait {
 #[cfg(all(unix, not(target_os = "macos")))]
 struct LinuxTrayIcon {
     icon: ksni::Icon,
-    sender: Option<Sender<AppInput>>,
+    sender: Option<AsyncComponentSender<App>>,
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
@@ -255,12 +255,8 @@ impl TrayIconTrait for GenericTrayIcon {
 
     #[cfg(all(unix, not(target_os = "macos")))]
     fn set_sender(&mut self, _sender: AsyncComponentSender<App>) {
-        match &mut self._inner {
-            PlatformTrayIcon::Linux(inner) => {
-                inner.sender = Some(_sender);
-            }
-            PlatformTrayIcon::Other { .. } => {}
-        }
+        let PlatformTrayIcon::Linux(inner) = &mut self._inner;
+        inner.sender = Some(_sender);
     }
 }
 
