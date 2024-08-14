@@ -29,13 +29,13 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::{env, fmt};
 use tracing::{debug, error, warn};
-use tray_icon::menu::{Menu, MenuEvent, MenuItem};
-use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 
 pub const GLOBAL_CSS: &str = include_str!("../res/app.css");
 const ICON: &[u8] = include_bytes!("../res/icon.png");
 const ABOUT_IMAGE: &[u8] = include_bytes!("../res/about.png");
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 const TRAY_ICON_MENU_CLOSE_ID: &str = "tray_icon_close";
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 const TRAY_ICON_MENU_OPEN_ID: &str = "tray_icon_open";
 
 #[cfg(all(unix, not(target_os = "macos")))]
@@ -97,6 +97,174 @@ impl NotificationExt for Notification {
         }
 
         self
+    }
+}
+
+/// Trait for platform specific tray icons
+trait TrayIconTrait {
+    /// Initialize the tray icon
+    fn init() -> Result<GenericTrayIcon, ()>;
+    /// Set the sender to send inputs to the app
+    fn set_sender(&mut self, sender: Sender<AppInput>);
+}
+
+/// Tray icon for Linux excluding macOS
+#[cfg(all(unix, not(target_os = "macos")))]
+struct LinuxTrayIcon {
+    icon: ksni::Icon,
+    sender_input: Option<Sender<AppInput>>,
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+impl ksni::Tray for LinuxTrayIcon {
+    fn id(&self) -> String {
+        env!("CARGO_PKG_NAME").to_string()
+    }
+
+    fn icon_name(&self) -> String {
+        "Space Acres".to_string()
+    }
+
+    fn title(&self) -> String {
+        "Space Acres".to_string()
+    }
+
+    fn icon_pixmap(&self) -> Vec<ksni::Icon> {
+        vec![self.icon.clone()]
+    }
+
+    fn tool_tip(&self) -> ksni::ToolTip {
+        ksni::ToolTip {
+            title: "Space Acres".to_string(),
+            ..Default::default()
+        }
+    }
+
+    fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
+        use ksni::menu::*;
+
+        vec![
+            StandardItem {
+                label: T.tray_icon_open().to_string(),
+                icon_data: self.icon.data.clone(),
+                activate: Box::new(|this: &mut Self| {
+                    if let Some(sender_input) = this.sender_input.as_ref() {
+                        if let Err(e) = sender_input.send(AppInput::ShowWindow) {
+                            warn!(?e, "Failed to send input to show window");
+                        }
+                    }
+                }),
+                ..Default::default()
+            }
+            .into(),
+            StandardItem {
+                label: T.tray_icon_close().to_string(),
+                icon_data: self.icon.data.clone(),
+                activate: Box::new(|this: &mut Self| {
+                    if let Some(sender_input) = this.sender_input.as_ref() {
+                        if let Err(e) = sender_input.send(AppInput::HideWindow) {
+                            warn!(?e, "Failed to send input to hide window");
+                        }
+                    }
+                }),
+                ..Default::default()
+            }
+            .into(),
+        ]
+    }
+}
+
+/// Tray icon for Windows and macOS
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+struct OtherTrayIcon {
+    _inner: tray_icon::TrayIcon,
+}
+
+/// Variant for tray icons
+enum PlatformTrayIcon {
+    #[cfg(all(unix, not(target_os = "macos")))]
+    Linux(LinuxTrayIcon),
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    Other { _inner: OtherTrayIcon },
+}
+
+/// Generic tray icon wrapper
+struct GenericTrayIcon {
+    _inner: PlatformTrayIcon,
+}
+
+impl TrayIconTrait for GenericTrayIcon {
+    fn init() -> Result<Self, ()> {
+        let icon_img = image::load_from_memory_with_format(ICON, image::ImageFormat::Png)
+            .expect("Statically correct image; qed")
+            .to_rgba8();
+
+        let (width, height) = icon_img.dimensions();
+
+        #[cfg(all(unix, not(target_os = "macos")))]
+        {
+            Ok(Self {
+                _inner: PlatformTrayIcon::Linux(LinuxTrayIcon {
+                    icon: ksni::Icon {
+                        width: width as i32,
+                        height: height as i32,
+                        data: icon_img.into_raw().to_vec(),
+                    },
+                    sender_input: None,
+                }),
+            })
+        }
+
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        {
+            let menu = tray_icon::menu::Menu::with_items(&[
+                &tray_icon::menu::MenuItem::with_id(
+                    TRAY_ICON_MENU_OPEN_ID,
+                    T.tray_icon_open().to_string(),
+                    true,
+                    None,
+                ),
+                &tray_icon::menu::MenuItem::with_id(
+                    TRAY_ICON_MENU_CLOSE_ID,
+                    T.tray_icon_close().to_string(),
+                    true,
+                    None,
+                ),
+            ])
+            .inspect_err(|error| {
+                warn!(%error, "Unable to create tray icon menu");
+            })
+            .map_err(|_| ())?;
+
+            let icon = tray_icon::TrayIconBuilder::new()
+                .with_tooltip("Space Acres")
+                .with_icon(
+                    tray_icon::Icon::from_rgba(icon_img.clone().into_raw().to_vec(), width, height)
+                        .expect("Statically correct image; qed"),
+                )
+                .with_menu(std::boxed::Box::new(menu))
+                .build();
+
+            icon.map_err(|error| {
+                warn!(%error, "Unable to create tray icon");
+            })
+            .map(|inner| Self {
+                _inner: PlatformTrayIcon::Other {
+                    _inner: OtherTrayIcon { _inner: inner },
+                },
+            })
+        }
+    }
+
+    fn set_sender(&mut self, _sender: Sender<AppInput>) {
+        match &mut self._inner {
+            #[cfg(all(unix, not(target_os = "macos")))]
+            PlatformTrayIcon::Linux(inner) => {
+                inner.sender_input = Some(_sender);
+            }
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
+            PlatformTrayIcon::Other { .. } => {}
+        }
     }
 }
 
@@ -260,7 +428,7 @@ pub struct App {
     backend_fut: Option<Box<dyn Future<Output = ()> + Send>>,
     // Keep it around so it doesn't disappear
     #[do_not_track]
-    _tray_icon: Option<TrayIcon>,
+    _tray_icon: Option<GenericTrayIcon>,
 }
 
 #[relm4::component(pub async)]
@@ -588,49 +756,12 @@ impl AsyncComponent for App {
             glib::Propagation::Stop
         });
 
-        let tray_icon = TrayIconBuilder::new();
+        let input_sender = sender.input_sender().clone();
 
-        let image = image::load_from_memory(ICON)
-            .expect("Statically correct image; qed")
-            .to_rgba8();
-
-        let (width, height) = image.dimensions();
-
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
-        let tray_icon = tray_icon.with_icon(
-            Icon::from_rgba(image.into_raw().to_vec(), width, height)
-                .expect("Statically correct image; qed"),
-        );
-
-        #[cfg(windows)]
-        let tray_icon = tray_icon
-            .with_icon(Icon::from_resource(1, None).expect("Tray icon is a valid ICO; qed"));
-
-        let tray_icon = tray_icon
-            .with_tooltip("Space Acres")
-            .with_menu(std::boxed::Box::new(
-                Menu::with_items(&[
-                    &MenuItem::with_id(
-                        TRAY_ICON_MENU_OPEN_ID,
-                        T.tray_icon_open().to_string(),
-                        true,
-                        None,
-                    ),
-                    &MenuItem::with_id(
-                        TRAY_ICON_MENU_CLOSE_ID,
-                        T.tray_icon_close().to_string(),
-                        true,
-                        None,
-                    ),
-                ])
-                .expect("Tray menu is valid; qed"),
-            ))
-            .build()
-            .map_err(|error| {
-                warn!(%error, "Unable to create tray icon");
-            })
-            .ok();
-
+        let tray_icon = GenericTrayIcon::init().ok().map(|mut tray_icon| {
+            tray_icon.set_sender(input_sender.clone());
+            tray_icon
+        });
         let has_tray_icon = tray_icon.is_some();
 
         let model = Self {
@@ -728,8 +859,6 @@ impl AsyncComponent for App {
             }
         });
 
-        let menu_event = MenuEvent::receiver();
-
         if has_tray_icon {
             root.connect_hide({
                 let sender = sender.clone();
@@ -752,31 +881,27 @@ impl AsyncComponent for App {
                     }
                 }
             });
-            let input_sender = sender.input_sender().clone();
 
-            sender.command(move |_sender, shutdown_receiver| {
-                shutdown_receiver
-                    .register(async move {
-                        while let Ok(event) = menu_event.recv() {
-                            let input = if event.id == TRAY_ICON_MENU_OPEN_ID {
-                                Some(AppInput::ShowWindow)
-                            } else if event.id == TRAY_ICON_MENU_CLOSE_ID {
-                                Some(AppInput::HideWindow)
-                            } else {
-                                None
-                            };
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
+            let menu_event = tray_icon::menu::MenuEvent::receiver();
 
-                            if let Some(input) = input {
-                                if let Err(e) = input_sender.send(input) {
-                                    warn!(
-                                        "Failed to send input from tray icon menu to app {:?}",
-                                        e
-                                    );
-                                }
-                            }
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
+            sender.spawn_command(move |_sender| {
+                while let Ok(event) = menu_event.recv() {
+                    let input = if event.id == TRAY_ICON_MENU_OPEN_ID {
+                        Some(AppInput::ShowWindow)
+                    } else if event.id == TRAY_ICON_MENU_CLOSE_ID {
+                        Some(AppInput::HideWindow)
+                    } else {
+                        None
+                    };
+
+                    if let Some(input) = input {
+                        if let Err(e) = input_sender.send(input) {
+                            warn!("Failed to send input from tray icon menu to app {:?}", e);
                         }
-                    })
-                    .drop_on_shutdown()
+                    }
+                }
             });
         }
 
