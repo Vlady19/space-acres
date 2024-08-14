@@ -105,14 +105,15 @@ trait TrayIconTrait {
     /// Initialize the tray icon
     fn init() -> Result<GenericTrayIcon, ()>;
     /// Set the sender to send inputs to the app
-    fn set_sender(&mut self, sender: Sender<AppInput>);
+    #[cfg(all(unix, not(target_os = "macos")))]
+    fn set_sender(&mut self, sender: AsyncComponentSender<App>);
 }
 
 /// Tray icon for Linux excluding macOS
 #[cfg(all(unix, not(target_os = "macos")))]
 struct LinuxTrayIcon {
     icon: ksni::Icon,
-    sender_input: Option<Sender<AppInput>>,
+    sender: Option<Sender<AppInput>>,
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
@@ -148,10 +149,8 @@ impl ksni::Tray for LinuxTrayIcon {
                 label: T.tray_icon_open().to_string(),
                 icon_data: self.icon.data.clone(),
                 activate: Box::new(|this: &mut Self| {
-                    if let Some(sender_input) = this.sender_input.as_ref() {
-                        if let Err(e) = sender_input.send(AppInput::ShowWindow) {
-                            warn!(?e, "Failed to send input to show window");
-                        }
+                    if let Some(sender) = this.sender.as_ref() {
+                        sender.input(AppInput::ShowWindow);
                     }
                 }),
                 ..Default::default()
@@ -161,10 +160,8 @@ impl ksni::Tray for LinuxTrayIcon {
                 label: T.tray_icon_close().to_string(),
                 icon_data: self.icon.data.clone(),
                 activate: Box::new(|this: &mut Self| {
-                    if let Some(sender_input) = this.sender_input.as_ref() {
-                        if let Err(e) = sender_input.send(AppInput::HideWindow) {
-                            warn!(?e, "Failed to send input to hide window");
-                        }
+                    if let Some(sender) = this.sender.as_ref() {
+                        sender.input(AppInput::HideWindow);
                     }
                 }),
                 ..Default::default()
@@ -210,7 +207,7 @@ impl TrayIconTrait for GenericTrayIcon {
                         height: height as i32,
                         data: icon_img.into_raw().to_vec(),
                     },
-                    sender_input: None,
+                    sender: None,
                 }),
             })
         }
@@ -256,13 +253,12 @@ impl TrayIconTrait for GenericTrayIcon {
         }
     }
 
-    fn set_sender(&mut self, _sender: Sender<AppInput>) {
+    #[cfg(all(unix, not(target_os = "macos")))]
+    fn set_sender(&mut self, _sender: AsyncComponentSender<App>) {
         match &mut self._inner {
-            #[cfg(all(unix, not(target_os = "macos")))]
             PlatformTrayIcon::Linux(inner) => {
-                inner.sender_input = Some(_sender);
+                inner.sender = Some(_sender);
             }
-            #[cfg(any(target_os = "windows", target_os = "macos"))]
             PlatformTrayIcon::Other { .. } => {}
         }
     }
@@ -756,12 +752,15 @@ impl AsyncComponent for App {
             glib::Propagation::Stop
         });
 
-        let input_sender = sender.input_sender().clone();
+        let input_sender = sender.clone();
+        let tray_icon = GenericTrayIcon::init().ok();
 
-        let tray_icon = GenericTrayIcon::init().ok().map(|mut tray_icon| {
-            tray_icon.set_sender(input_sender.clone());
+        #[cfg(all(unix, not(target_os = "macos")))]
+        let tray_icon = tray_icon.map(|mut tray_icon| {
+            tray_icon.set_sender(input_sender);
             tray_icon
         });
+
         let has_tray_icon = tray_icon.is_some();
 
         let model = Self {
@@ -897,9 +896,7 @@ impl AsyncComponent for App {
                     };
 
                     if let Some(input) = input {
-                        if let Err(e) = input_sender.send(input) {
-                            warn!("Failed to send input from tray icon menu to app {:?}", e);
-                        }
+                        input_sender.input(input);
                     }
                 }
             });
