@@ -108,6 +108,7 @@ mod generic_tray_icon {
     use super::{load_icon, App, AppInput, T};
     use relm4::AsyncComponentSender;
 
+    #[derive(Clone)]
     pub struct TrayIcon {
         icon: ksni::Icon,
         sender: AsyncComponentSender<App>,
@@ -128,7 +129,7 @@ mod generic_tray_icon {
                 sender,
             };
 
-            let tray_service = ksni::TrayService::new(icon);
+            let tray_service = ksni::TrayService::new(icon.clone());
 
             let handle = tray_service.handle();
             tray_service.spawn();
