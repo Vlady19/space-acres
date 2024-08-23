@@ -116,18 +116,7 @@ mod generic_tray_icon {
 
     impl TrayIcon {
         pub(crate) fn init(sender: AsyncComponentSender<App>) -> Result<Self, ()> {
-            let icon_img = load_icon();
-
-            let (width, height) = icon_img.dimensions();
-
-            let icon = Self {
-                icon: ksni::Icon {
-                    width: width as i32,
-                    height: height as i32,
-                    data: icon_img.into_raw().to_vec(),
-                },
-                sender,
-            };
+            let icon = Self { sender };
 
             let tray_service = ksni::TrayService::new(icon.clone());
 
@@ -137,14 +126,13 @@ mod generic_tray_icon {
         }
     }
 
-    #[cfg(all(unix, not(target_os = "macos")))]
     impl ksni::Tray for TrayIcon {
         fn id(&self) -> String {
             env!("CARGO_PKG_NAME").to_string()
         }
 
         fn icon_name(&self) -> String {
-            "Space Acres".to_string()
+            "space-acres".to_string()
         }
 
         fn title(&self) -> String {
@@ -152,7 +140,15 @@ mod generic_tray_icon {
         }
 
         fn icon_pixmap(&self) -> Vec<ksni::Icon> {
-            vec![self.icon.clone()]
+            let icon_img = load_icon();
+
+            let (width, height) = icon_img.dimensions();
+
+            vec![ksni::Icon {
+                width: width as i32,
+                height: height as i32,
+                data: icon_img.into_raw().to_vec(),
+            }]
         }
 
         fn tool_tip(&self) -> ksni::ToolTip {
@@ -167,7 +163,7 @@ mod generic_tray_icon {
 
             vec![
                 StandardItem {
-                    label: T.tray_icon_open().to_string(),
+                    label: *&T.tray_icon_open(),
                     icon_data: self.icon.data.clone(),
                     activate: Box::new(|this: &mut Self| {
                         this.sender.input(AppInput::ShowWindow);
@@ -176,7 +172,7 @@ mod generic_tray_icon {
                 }
                 .into(),
                 StandardItem {
-                    label: T.tray_icon_close().to_string(),
+                    label: *&T.tray_icon_close(),
                     icon_data: self.icon.data.clone(),
                     activate: Box::new(|this: &mut Self| {
                         this.sender.input(AppInput::HideWindow);
