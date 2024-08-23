@@ -131,7 +131,6 @@ mod generic_tray_icon {
 
             let tray_service = ksni::TrayService::new(icon.clone());
 
-            let handle = tray_service.handle();
             tray_service.spawn();
 
             Ok(icon)
