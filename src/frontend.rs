@@ -18,6 +18,7 @@ use futures::channel::mpsc;
 use futures::{SinkExt, StreamExt};
 use gtk::glib;
 use gtk::prelude::*;
+use image::{ImageBuffer, Rgba};
 use notify_rust::Notification;
 use relm4::actions::{RelmAction, RelmActionGroup};
 use relm4::prelude::*;
@@ -96,9 +97,15 @@ impl NotificationExt for Notification {
     }
 }
 
+pub(crate) fn load_icon() -> ImageBuffer<Rgba<u8>, Vec<u8>> {
+    image::load_from_memory_with_format(ICON, image::ImageFormat::Png)
+        .expect("Statically correct image; qed")
+        .to_rgba8()
+}
+
 #[cfg(all(unix, not(target_os = "macos")))]
 mod generic_tray_icon {
-    use super::App;
+    use super::{load_icon, App, AppInput, T};
     use relm4::AsyncComponentSender;
 
     pub struct TrayIcon {
@@ -108,6 +115,10 @@ mod generic_tray_icon {
 
     impl TrayIcon {
         pub(crate) fn init(sender: AsyncComponentSender<App>) -> Result<Self, ()> {
+            let icon_img = load_icon();
+
+            let (width, height) = icon_img.dimensions();
+
             let icon = Self {
                 icon: ksni::Icon {
                     width: width as i32,
@@ -127,7 +138,7 @@ mod generic_tray_icon {
     }
 
     #[cfg(all(unix, not(target_os = "macos")))]
-    impl ksni::Tray for LinuxTrayIcon {
+    impl ksni::Tray for TrayIcon {
         fn id(&self) -> String {
             env!("CARGO_PKG_NAME").to_string()
         }
@@ -184,7 +195,7 @@ mod generic_tray_icon {
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 mod generic_tray_icon {
-    use super::{App, AppInput, ICON, T};
+    use super::{load_icon, App, AppInput, T};
     use relm4::AsyncComponentSender;
     use tracing::warn;
 
@@ -195,9 +206,7 @@ mod generic_tray_icon {
 
     impl TrayIcon {
         pub(crate) fn init(sender: AsyncComponentSender<App>) -> Result<Self, ()> {
-            let icon_img = image::load_from_memory_with_format(ICON, image::ImageFormat::Png)
-                .expect("Statically correct image; qed")
-                .to_rgba8();
+            let icon_img = load_icon();
 
             let (width, height) = icon_img.dimensions();
 
