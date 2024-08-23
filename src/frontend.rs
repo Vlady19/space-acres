@@ -109,7 +109,7 @@ mod generic_tray_icon {
     use relm4::AsyncComponentSender;
 
     pub struct TrayIcon {
-        icon: tray_icon::Icon,
+        icon: ksni::Icon,
         sender: AsyncComponentSender<App>,
     }
 
@@ -128,7 +128,7 @@ mod generic_tray_icon {
                 sender,
             };
 
-            let tray_service = ksni::TrayService::new(Self);
+            let tray_service = ksni::TrayService::new(icon);
 
             let handle = tray_service.handle();
             tray_service.spawn();
@@ -170,9 +170,7 @@ mod generic_tray_icon {
                     label: T.tray_icon_open().to_string(),
                     icon_data: self.icon.data.clone(),
                     activate: Box::new(|this: &mut Self| {
-                        if let Some(sender) = this.sender.as_ref() {
-                            sender.input(AppInput::ShowWindow);
-                        }
+                        this.sender.input(AppInput::ShowWindow);
                     }),
                     ..Default::default()
                 }
@@ -181,9 +179,7 @@ mod generic_tray_icon {
                     label: T.tray_icon_close().to_string(),
                     icon_data: self.icon.data.clone(),
                     activate: Box::new(|this: &mut Self| {
-                        if let Some(sender) = this.sender.as_ref() {
-                            sender.input(AppInput::HideWindow);
-                        }
+                        this.sender.input(AppInput::HideWindow);
                     }),
                     ..Default::default()
                 }
