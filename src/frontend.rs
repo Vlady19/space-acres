@@ -110,7 +110,6 @@ mod generic_tray_icon {
 
     #[derive(Clone)]
     pub struct TrayIcon {
-        icon: ksni::Icon,
         sender: AsyncComponentSender<App>,
     }
 
@@ -163,8 +162,7 @@ mod generic_tray_icon {
 
             vec![
                 StandardItem {
-                    label: *&T.tray_icon_open(),
-                    icon_data: self.icon.data.clone(),
+                    label: (*&T.tray_icon_open()).to_string(),
                     activate: Box::new(|this: &mut Self| {
                         this.sender.input(AppInput::ShowWindow);
                     }),
@@ -172,8 +170,7 @@ mod generic_tray_icon {
                 }
                 .into(),
                 StandardItem {
-                    label: *&T.tray_icon_close(),
-                    icon_data: self.icon.data.clone(),
+                    label: (*&T.tray_icon_close()).to_string(),
                     activate: Box::new(|this: &mut Self| {
                         this.sender.input(AppInput::HideWindow);
                     }),
