@@ -40,6 +40,8 @@ use tracing_subscriber::EnvFilter;
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 mod icon_names {
     include!(concat!(env!("OUT_DIR"), "/icon_names.rs"));
+    pub(crate) const GRESOURCE_BYTES: &'static [u8] =
+        include_bytes!(concat!(env!("OUT_DIR"), "/resources.gresource"));
 }
 
 /// Number of log files to keep
@@ -227,7 +229,7 @@ impl Cli {
         });
 
         app.set_global_css(GLOBAL_CSS);
-        relm4_icons::initialize_icons!(icon_names::BASE_RESOURCE_PATH, icon_names::APP_ID);
+        relm4_icons::initialize_icons(icon_names::GRESOURCE_BYTES);
 
         // Prefer dark theme in cross-platform way if environment is configured that way
         if let Some(settings) = gtk::Settings::default() {
