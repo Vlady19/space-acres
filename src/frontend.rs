@@ -162,7 +162,7 @@ mod generic_tray_icon {
 
             vec![
                 StandardItem {
-                    label: (*&T.tray_icon_open()).to_string(),
+                    label: T.tray_icon_open().to_string(),
                     activate: Box::new(|this: &mut Self| {
                         this.sender.input(AppInput::ShowWindow);
                     }),
@@ -170,7 +170,7 @@ mod generic_tray_icon {
                 }
                 .into(),
                 StandardItem {
-                    label: (*&T.tray_icon_close()).to_string(),
+                    label: T.tray_icon_close().to_string(),
                     activate: Box::new(|this: &mut Self| {
                         this.sender.input(AppInput::HideWindow);
                     }),
